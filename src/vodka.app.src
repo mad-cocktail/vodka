@@ -1,0 +1,7 @@
+{application, vodka,
+ [
+  {description, ""},
+  {vsn, git},
+  {registered, []},
+  {env, []}
+ ]}.
