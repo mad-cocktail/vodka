@@ -27,9 +27,22 @@ Proplist to record
 
     pl_to_record(PL) ->
         [Rec#rec{K = V} || {K, V} <- PL].
-    
+
 Getters
 -------
 
-Not yet implemented.
+.. code-block:: erlang
 
+    get_multi_field(K1, K2, K3, A) ->
+        #rec{K1 = V} = #rec{K2 = V} = A#rec{K3 = updated},
+        V.
+
+    get_nested_field(K1, A) ->
+       [#rec{K1 = V}] = A,
+       V.
+
+
+Problems
+--------
+
+It does not work with query comprehensions.
