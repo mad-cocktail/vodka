@@ -37,13 +37,17 @@
 %    %% f2 -> #rec{f2 = V} = A
 %    %% end.
 
-%get_multi_field(K1, K2, A) ->
-%    #rec{K1 = V} = #rec2{K2 = V} = A#rec{f1 = updated},
-%    V.
-
- get_multi_field(K, A) ->
-     #rec{K = V} = #rec2{K = V} = A#rec{f1 = updated},
+ get_multi_field(K1, K2, K3, A) ->
+     #rec{K1 = V} = #rec{K2 = V} = A#rec{K3 = updated},
      V.
+
+ get_nested_field(K1, A) ->
+    [#rec{K1 = V}] = A,
+    V.
+
+ get_arg_field(#rec{K1 = V}, K1) ->
+    V.
+
 
 %-include_lib("eunit/include/eunit.hrl").
 

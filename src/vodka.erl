@@ -8,10 +8,8 @@ parse_transform(Forms, _Options) ->
     Records = extract_record_definitions(Forms),
     %% RecordName2FieldName
     RN2DFN = orddict:from_list(record_definitions_to_pl(Records)),
-    F1 = getter_rec_expr_trans(RN2DFN),
-    F2 = setter_rec_expr_trans(RN2DFN),
-    F = foldl_functions([F1, F2]),
-    X = [postorder(F, Tree) || Tree <- Forms],
+    F = getter_rec_expr_trans(RN2DFN),
+    X = preorder_map_group(F, Forms),
     io:format(user, "Before:\t~p\n\nAfter:\t~p\n", [Forms, X]),
     X.
 
@@ -48,43 +46,21 @@ to_element(RecName, RecFields) ->
     {RecNameAtom, FieldNames}.
 
 
-postorder(F, Form) ->
-    NewTree =
-        case erl_syntax:subtrees(Form) of
+preorder_map(F, Form) ->
+    Tree = F(Form),
+    Tree2 = 
+        case erl_syntax:subtrees(Tree) of
         [] ->
-            Form;
+            Tree;
         List ->
-            Groups = [handle_group(F, Group) || Group <- List],
-            Tree2 = erl_syntax:update_tree(Form, Groups),
-            Form2 = erl_syntax:revert(Tree2),
-            Form2
+            Groups = [preorder_map_group(F, Group) || Group <- List],
+            erl_syntax:update_tree(Tree, Groups)
         end,
-    F(NewTree).
+    erl_syntax:revert(Tree2).
 
 
-setter_rec_expr_trans(RN2DFN) ->
-    fun(Node) ->
-        case is_update_record_expr(Node) of
-        true ->
-            Argument  = erl_syntax:record_expr_argument(Node),
-            Type      = erl_syntax:record_expr_type(Node),
-            Fields    = erl_syntax:record_expr_fields(Node),
-            case lists:partition(fun is_valid_record_expr_field/1, Fields) of
-                {_, []} -> 
-                    Node;
-                {ValidFields, InvalidFields} ->
-                    FieldNames = field_names(RN2DFN, Type),
-                    CaseExpr = lists:foldr(
-                        set_unknown_field_name(FieldNames, Type), 
-                        erl_syntax:record_expr(Argument, Type, ValidFields),
-                        InvalidFields),
-                    io:format(user, "Form (set):~n~s~n", [erl_pp:expr(CaseExpr)]),
-                    CaseExpr
-            end;
-        false ->
-            Node
-        end
-        end.
+preorder_map_group(F, Group) ->
+    [preorder_map(F, Subtree) || Subtree <- Group].
 
 
 getter_rec_expr_trans(RN2DFN) ->
@@ -92,7 +68,7 @@ getter_rec_expr_trans(RN2DFN) ->
         case node_type(Node) of
         match_expr ->
             Exprs = flatten_expressions(Node),
-            IsCreateExpr = lists:any(fun is_create_record_expr/1, Exprs),
+            IsCreateExpr = lists:any(fun is_record_expr/1, Exprs),
             case IsCreateExpr of
             true ->
 %               io:format(user, "Match: ~p.~n", [Node]),
@@ -115,11 +91,11 @@ getter_rec_expr_trans(RN2DFN) ->
                                                     CaseExprClauses),
                     CaseExpr2 = erl_syntax:revert(copy_pos(Node, CaseExpr)),
                     io:format(user, "Form before:~n~s~n"
-                                    "Form:~n~s~n", 
+                                    "Form after:~n~s~n", 
                               [erl_pp:expr(Node), erl_pp:expr(CaseExpr2)]),
                     CaseExpr2;
                 [] ->
-                    io:format(user, "Skip the record_expr with known fields.", []),
+                    io:format(user, "Skip the record_expr with known fields.~n", []),
                     Node
                 end;
             false -> Node
@@ -134,7 +110,7 @@ getter_case_clause(Node, Vars, Values) ->
     io:format(user, "Case clase: ~p -> ~p~n", [Vars, Values]),
     AtomASTs = [erl_syntax:revert(erl_syntax:atom(Val)) || Val <- Values],
     F = replace_variables_with_values(Vars, AtomASTs),
-    Body = postorder(F, Node),
+    Body = preorder_map(F, Node),
     erl_syntax:revert(
         erl_syntax:clause([erl_syntax:tuple(atoms(Values))], none, [Body])).
 
@@ -165,7 +141,7 @@ merge_field_values_for_same_var_names([]) ->
 
 get_variable_field_names(RN2DFN) ->
     fun(Node) ->
-    case is_create_record_expr(Node) of
+    case is_record_expr(Node) of
         true ->
             Type      = erl_syntax:record_expr_type(Node),
             Fields    = erl_syntax:record_expr_fields(Node),
@@ -184,23 +160,12 @@ get_variable_field_names(RN2DFN) ->
     end.
 
 field_key_as_atom(Field) ->
-    erl_syntax:variable_name(
-        erl_syntax:record_field_name(Field)).
+    erl_syntax:variable_name(erl_syntax:record_field_name(Field)).
 
 
-is_update_record_expr(Node) ->
-    node_type(Node) =:= record_expr andalso
-    erl_syntax:record_expr_argument(Node) =/= none.
+is_record_expr(Node) ->
+    node_type(Node) =:= record_expr.
 
-
-is_create_record_expr(Node) ->
-    node_type(Node) =:= record_expr andalso
-    erl_syntax:record_expr_argument(Node) =:= none.
-
-
-
-handle_group(F, Group) ->
-    [postorder(F, Subtree) || Subtree <- Group].
 
 
 is_valid_record_expr_field(Field) ->
@@ -213,48 +178,12 @@ field_names(RN2DFN, Type) ->
     proplists:get_value(RecNameAtom, RN2DFN).
     
     
-set_unknown_field_name(FieldNames, Type) -> 
-    fun(Field, Argument) ->
-        VarName    = erl_syntax:record_field_name(Field),
-        Value      = erl_syntax:record_field_value(Field),
-        Clauses    = [begin
-                        NewField = copy_pos(Field, 
-                                            erl_syntax:record_field(FieldName, 
-                                                                    Value)),
-                        Body = [erl_syntax:record_expr(Argument, Type, 
-                                                       [NewField])],
-                        erl_syntax:clause([FieldName], none, Body)
-                      end
-                      || FieldName <- FieldNames],
-        Otherwise  = erl_syntax:clause([erl_syntax:underscore()],
-                                       none,
-                                       [record_field_not_exist(VarName)]),
-        Clauses2  = [copy_pos(Field, X) || X <- Clauses ++ [Otherwise]],
-        erl_syntax:revert(copy_pos(Field, erl_syntax:case_expr(VarName, Clauses2)))
-    end.
 
 
 copy_pos(From, To) ->
     Pos = erl_syntax:get_pos(From),
     erl_syntax:set_pos(To, Pos).
 
-
-record_field_not_exist(VarName) ->
-    NotFound    = erl_syntax:atom(record_field_not_found),
-    Error       = copy_pos(VarName, erl_syntax:tuple([NotFound, VarName])),
-    throw_error(Error).
-
-throw_error(Error) ->
-    Module      = erl_syntax:atom(erlang),
-    Function    = erl_syntax:atom(error),
-    copy_pos(Error, erl_syntax:application(Module, Function, [Error])).
-
-
-foldl_functions(Fs) ->
-    fun(Node) ->
-        Apply = fun(F, N) -> F(N) end,
-        lists:foldl(Apply, Node, Fs)
-        end.
 
 
 
