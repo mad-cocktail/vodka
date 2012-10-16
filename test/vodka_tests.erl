@@ -52,6 +52,12 @@ get_match_field(K1, A) ->
    [#rec{K1 = V}] = A,
    V.
 
+all_matches_alive(#rec{f1 = F1}) ->
+    F1;
+all_matches_alive(F1) ->
+    F1.
+
+
 
 -include_lib("eunit/include/eunit.hrl").
 
@@ -72,5 +78,9 @@ get_field_test_() ->
     [?_assertEqual(get_field(f1, #rec{}), 1)
     ,?_assertEqual(get_field(f2, #rec{}), 2)
     ,?_assertEqual(get_field(f2, #rec{f2=3}), 3)].
+
+all_matches_alive_test_() ->
+    [?_assertEqual(all_matches_alive(#rec{}), 1)
+    ,?_assertEqual(all_matches_alive(22), 22)].
 
 -endif.

@@ -19,8 +19,8 @@ getter_and_setter_rec_expr_trans(RN2DFN) ->
         case node_type(Node) of
         match_expr ->
             Exprs = flatten_expressions(Node),
-            IsCreateExpr = any_list(fun is_record_expr/1, Exprs),
-            case IsCreateExpr of
+            IsRecExpr = any_list(fun is_record_expr/1, Exprs),
+            case IsRecExpr of
             true ->
 %               io:format(user, "Match: ~p.~n", [Node]),
                 %% Replace each `Key' variable with a value of its
@@ -40,7 +40,14 @@ getter_and_setter_rec_expr_trans(RN2DFN) ->
             Clauses = erl_syntax:function_clauses(Node),
             FunName = erl_syntax:function_name(Node),
             Clauses2 = lists:flatmap(transform_clause(RN2DFN), Clauses),
-            erl_syntax:function(FunName, Clauses2);
+            Fn = erl_syntax:revert(copy_pos(Node,
+                                            erl_syntax:function(FunName, 
+                                                                Clauses2))),
+            [io:format(user, "Fun before:~n~s~n"
+                            "Fun after:~n~s~n", 
+                      [erl_pp:function(Node), erl_pp:function(Fn)]) 
+                       || Fn =/= Node],
+            Fn;
 
         _NodeType ->
             Node
@@ -51,19 +58,23 @@ getter_and_setter_rec_expr_trans(RN2DFN) ->
 transform_clause(RN2DFN) ->
     fun(Node) ->
         Patterns = erl_syntax:clause_patterns(Node),
-        IsCreateExpr = any_list(fun is_record_expr/1, Patterns),
-        case IsCreateExpr of
+        IsRecExpr = any_list(fun is_record_expr/1, Patterns),
+        case IsRecExpr of
         true ->
             VarFieldMap = map_variable_to_field_name(RN2DFN, Patterns),
-            {Vars, VarValues} = lists:unzip(VarFieldMap),
-            VarValuesCases = multiply_lists(VarValues),
-%           io:format(user, "~nMap: ~p~n", [VarFieldMap]),
-            [begin
-                AtomASTs = atoms(VarValues),
-                delete_redifined_fields(
-                    replace_variables_with_values(Node, Vars, AtomASTs))
-             end
-             || VarValues <- VarValuesCases];
+            case VarFieldMap of
+            [_|_] ->
+                {Vars, VarValues} = lists:unzip(VarFieldMap),
+                VarValuesCases = multiply_lists(VarValues),
+                io:format(user, "~nMap: ~p~n", [VarFieldMap]),
+                [begin
+                    AtomASTs = atoms(VarVals),
+                    delete_redifined_fields(
+                        replace_variables_with_values(Node, Vars, AtomASTs))
+                 end
+                 || VarVals <- VarValuesCases];
+            [] -> [Node]
+            end;
         false -> [Node]
         end
     end.
