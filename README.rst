@@ -20,14 +20,6 @@ Setters
 
     Rec#rec{FieldName = FieldValue}
 
-Proplist to record
-------------------
-
-.. code-block:: erlang
-
-    pl_to_record(PL) ->
-        [Rec#rec{K = V} || {K, V} <- PL].
-
 Getters
 -------
 

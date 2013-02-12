@@ -44,7 +44,7 @@ getter_and_setter_rec_expr_trans(RN2DFN) ->
                                             erl_syntax:function(FunName, 
                                                                 Clauses2))),
             [io:format(user, "Fun before:~n~s~n"
-                            "Fun after:~n~s~n", 
+                             "Fun after:~n~s~n", 
                       [erl_pp:function(Node), erl_pp:function(Fn)]) 
                        || Fn =/= Node],
             Fn;
